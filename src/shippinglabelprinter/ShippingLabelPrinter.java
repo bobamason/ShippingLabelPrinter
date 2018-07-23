@@ -6,9 +6,16 @@
 package shippinglabelprinter;
 
 import java.awt.Desktop;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.UnsupportedFlavorException;
+import java.awt.dnd.DnDConstants;
+import java.awt.dnd.DropTarget;
+import java.awt.dnd.DropTargetAdapter;
+import java.awt.dnd.DropTargetDropEvent;
 import java.awt.print.PrinterJob;
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -71,7 +78,7 @@ public class ShippingLabelPrinter extends JApplet {
     }
 
     private final Preferences preferences = Preferences.userNodeForPackage(ShippingLabelPrinter.class);
-    private final File file;
+    private File file;
     private final PrintService[] printers;
     private PrintService printerLabel;
     private PrintService printerNormal;
@@ -90,6 +97,34 @@ public class ShippingLabelPrinter extends JApplet {
         isAutoPrintEnabled = preferences.getBoolean(Keys.AUTO_PRINT, false);
         uiPanel = new UIPanel(this);
         add(uiPanel);
+        if(file != null)
+            uiPanel.setDebugText(file.getName());
+        new DropTarget(uiPanel, new DropTargetAdapter() {
+            @Override
+            public void drop(DropTargetDropEvent event) {
+                try {
+                    event.acceptDrop(DnDConstants.ACTION_COPY_OR_MOVE);
+                    List<File> files = (List<File>) event.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
+                    if(files.size() > 0){
+                        file = files.get(0);
+                        uiPanel.setDebugText(file.getName());
+                        if(!file.isFile() || !file.getName().endsWith(".pdf")){
+                            file = null;
+                        }
+                        if (isAutoPrintEnabled) {
+                            printPdfFile();
+                        }
+                    }
+                    event.dropComplete(true);
+                } catch (UnsupportedFlavorException ex) {
+                    Logger.getLogger(ShippingLabelPrinter.class.getName()).log(Level.SEVERE, null, ex);
+                } catch (IOException ex) {
+                    Logger.getLogger(ShippingLabelPrinter.class.getName()).log(Level.SEVERE, null, ex);
+                } catch (ClassCastException ex) {
+                    Logger.getLogger(ShippingLabelPrinter.class.getName()).log(Level.SEVERE, null, ex);
+                }
+            }
+        });
         if (isAutoPrintEnabled) {
             printPdfFile();
         }
@@ -133,10 +168,12 @@ public class ShippingLabelPrinter extends JApplet {
 
     public void printPdfFile() {
         if (isFileLabel()) {
-            System.out.println("printing label");
+            System.out.println();
+            uiPanel.setDebugText("printing label");
             printPdfFile(printerLabel);
         } else if (isFileShippingTicket()) {
             System.out.println("printing shippping ticket");
+            uiPanel.setDebugText("printing shippping ticket");
             printPdfFile(printerNormal);
         } else {
             System.out.println("incompatible file");
@@ -153,7 +190,6 @@ public class ShippingLabelPrinter extends JApplet {
 
     public void printPdfFile(final PrintService printer) {
         uiPanel.showProgressBar();
-        uiPanel.setDebugText("printing...");
         new SwingWorker<String, Void>() {
 
             @Override
@@ -165,14 +201,16 @@ public class ShippingLabelPrinter extends JApplet {
                     return "no printer selected";
                 }
                 try {
+                    System.out.println("printing... " + printer.getName());
                     PrinterJob job = PrinterJob.getPrinterJob();
                     PDDocument document = PDDocument.load(file);
                     job.setPageable(new PDFPageable(document));
                     PrintRequestAttributeSet attributes = new HashPrintRequestAttributeSet();
-                    attributes.add(new PageRanges(0, 1));
+                    attributes.add(new PageRanges(1, 1));
                     attributes.add(new Copies(2));
+                    job.setPrintService(printer);
                     job.print(attributes);
-                    return "print successfull";
+                    return "print successful";
                 } catch (Exception e) {
                     return e.getLocalizedMessage();
                 }
@@ -184,10 +222,9 @@ public class ShippingLabelPrinter extends JApplet {
                     final String text = get();
                     System.out.println(text);
                     uiPanel.setDebugText(text);
-                } catch (InterruptedException ex) {
+                } catch (Exception ex) {
                     Logger.getLogger(ShippingLabelPrinter.class.getName()).log(Level.SEVERE, null, ex);
-                } catch (ExecutionException ex) {
-                    Logger.getLogger(ShippingLabelPrinter.class.getName()).log(Level.SEVERE, null, ex);
+                    uiPanel.setDebugText(ex.getLocalizedMessage());
                 }
                 uiPanel.hideProgressBar();
             }
@@ -199,7 +236,7 @@ public class ShippingLabelPrinter extends JApplet {
             return false;
         }
         String fileName = file.getName();
-        return (fileName.contains("job") || fileName.contains("Job")) && Character.isDigit(fileName.charAt(0));
+        return fileName.startsWith("JobLabel");
     }
 
     private boolean isFileShippingTicket() {
@@ -207,7 +244,7 @@ public class ShippingLabelPrinter extends JApplet {
             return false;
         }
         String fileName = file.getName();
-        return (fileName.contains("job") || fileName.contains("Job")) && !Character.isDigit(fileName.charAt(0));
+        return Character.isDigit(fileName.charAt(0)) && fileName.charAt(7) == '_';
     }
 
     public PrintService getPrinterLabel() {
