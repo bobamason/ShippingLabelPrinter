@@ -222,6 +222,8 @@ public class ShippingLabelPrinter extends JApplet {
                     final String text = get();
                     System.out.println(text);
                     uiPanel.setDebugText(text);
+                    if(isAutoPrintEnabled)
+                        System.exit(0);
                 } catch (Exception ex) {
                     Logger.getLogger(ShippingLabelPrinter.class.getName()).log(Level.SEVERE, null, ex);
                     uiPanel.setDebugText(ex.getLocalizedMessage());
